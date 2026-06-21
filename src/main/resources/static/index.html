@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>AI智能模拟面试系统</title>
+    <style>
+      body {margin: 0;padding: 0;font-family: 'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background-color: #f0f2f5;display: flex;justify-content: center;height: 100vh}
+      .chat-container{width:100%;max-width: 800px;background: white;display: flex;flex-direction: column;box-shadow: 0 4px 20px rgba(0,0,0,0.1);}
+      .header {background: #1e293b;color:white;padding: 20px;text-align:center;font-size: 1.2rem;font-weight: bold;}
+      .chat-box{flex:1;padding: 20px;overflow-y:auto;display:flex;flex-direction:column;gap:15px;}
+
+      .msg-row{display: flex;width: 100%;}
+      .msg-row.user{justify-content: flex-end;}
+      .msg-row.ai {justify-content: flex-start;}
+
+      .msg-bubble{max-width: 75%;padding: 15px;border-radius: 12px;line-height:1.6; }
+      .user .msg-bubble{background: #3b82f6;color:white;border-bottom-right-radius: 2px;}
+      .ai .msg-bubble {background: #f1f5f9;color:#1e293b;border-bottom-left-radius: 2px;box-shadow: 0 2px 4px rgba(0,0,0,0.05);}
+
+      .eval-card{margin-top: 10px;border-left:4px solid #3b82f6;padding-left: 15px;background: white;border-radius: 4px;padding:15px;box-shadow: 0 1px 3px rgba(0,0,0,0.1);}
+      .eval-tag {display:inline-block;background: #e0f2fe;color:#0284c7;padding: 2px 8px;border-radius: 12px;font-size:0.85rem;font-weight: bold;margin-bottom: 8px;}
+      .eval-content {font-size: 0.95rem;color:#475569;margin-bottom: 12px;}
+      .eval-next{font-weight: bold;color:#0f172a;}
+
+      .input-area{padding:20px;background: white;border-top:1px solid #e2e8f0;display: flex;gap: 10px;}
+      textarea {flex:1;padding: 12px;border:1px solid #cbd5e1;border: 8px;resize:none;font-size: 1rem;outline:none;}
+      textarea:focus {border-color: #3b82f6;}
+      button {background: #1e293b;color:white;border:none;padding: 0 25px;border-radius: 8px;cursor:pointer;font-size: 1rem;font-weight: bold;transition: 0.2s;}
+      button:hover {background: #334155;}
+      button:disabled {background: #94a3b8;cursor: not-allowed;}
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">AI大厂全栈开发模拟面试平台</div>
+    <div class="chat-box" id="chatBox"></div>
+    <div class="input-area">
+        <textarea id="userInput" rows="2" placeholder="请输入你的回答..."></textarea>
+        <button id="sendBtn" onclick="sendMessage()">发送</button>
+    </div>
+</div>
+<script>
+    const chatBox = document.getElementById('chatBox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    //确保url基础路径正确，如果直接在根目录下运行，可以使用相对路径
+    const BASE_URL = window.location.origin;
+
+    window.onload = async ()=>{
+        try {
+            const response = await fetch(`${BASE_URL}/api/init`);
+            if(!response.ok)throw new Error('网络请求失败');
+            const question = await response.text();
+            appendAiMessage(question);
+        } catch (error){
+            appendAiMessage("无法连接到服务器，请确保Spring boot 服务已启动在8080端口。");
+        }
+    };
+    async function sendMessage(){
+        const text = userInput.value.trim();
+        if(!text) return;
+
+        appendUserMessage(text);
+        userInput.value = '';
+        sendBtn.disabled = true;
+        sendBtn.innerText = '思考中...';
+
+        try{
+            const res = await fetch(`${BASE_URL}/api/chat`,{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({message:text})
+            });
+            const data =await res.json();
+            appendAiEvalCard(data);
+        }catch(error){
+            appendAiMessage("发生错误，请检查后端API是否响应。");
+        }finally {
+            sendBtn.disabled = false;
+            sendBtn.innerText = '发送';
+            scrollToBottom();
+        }
+    }
+    function appendUserMessage(text){
+        chatBox.innerHTML +=`
+        <div class="msg-row user">
+             <div class="msg-bubble">${text}</div>
+        </div>`;
+        scrollToBottom();
+    }
+    function appendAiMessage(text){
+        chatBox.innerHTML +=`
+        <div class="msg-row ai">
+             <div class="msg-bubble">面试官：${text}</div>
+        </div>`;
+        scrollToBottom();
+    }
+    function appendAiEvalCard(data){
+        chatBox.innerHTML += `
+        <div class="msg-row ai">
+             <div class="msg-bubble" style="background: transparent;box-shadow: none;padding: 0;width: 100%;">
+                 <div class = "eval-card">
+                      <div class = "eval-tag">考点：${data.field || '未知'}</div>
+                      <div class = "eval-content"><strong>导师点评：</strong>${data.evaluation || '暂无评价'}</div>
+                      <div class = "eval-next"><strong>追问：</strong>${data.nextQuestion || '无'}</div>
+                 </div>
+             </div>
+        </div>`;
+        scrollToBottom();
+    }
+    function scrollToBottom(){
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+</script>
+</body>
+</html>
