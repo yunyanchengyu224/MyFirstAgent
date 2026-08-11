@@ -42,3 +42,13 @@ build/
 .settings/
 .classpath
 .project
+
+# Generated dependencies for the root desktop launcher.
+/app/
+/runtime/
+
+jre/
+*.exe
+*.ico
+!AIinterview.exe
+!src/main/resources/icons/*.ico

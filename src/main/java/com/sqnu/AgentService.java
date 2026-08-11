@@ -17,6 +17,8 @@ public class AgentService {
     private ObjectMapper mapper;
     private String currentQuestion;
     private final HttpClient httpClient;
+    private final String ollamaEndpoint;
+    private final String ollamaModel;
 
     public AgentService() {
         this.mapper = new ObjectMapper();
@@ -24,7 +26,17 @@ public class AgentService {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
+        this.ollamaEndpoint = getSetting("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate");
+        this.ollamaModel = getSetting("OLLAMA_MODEL", "deepseek-r1:7b");
         initChat();//初始化状态
+    }
+
+    private String getSetting(String name, String defaultValue) {
+        String systemValue = System.getProperty(name);
+        if (systemValue != null && !systemValue.isBlank()) {
+            return systemValue;
+        }
+        return System.getenv().getOrDefault(name, defaultValue);
     }
     public String initChat() {
         conversationMemory = new StringBuilder();
@@ -40,7 +52,7 @@ public class AgentService {
         try{
             //2.使用jackson构造JSON,彻底解决手动拼接带来的格式错误
             ObjectNode requestBody = mapper.createObjectNode();
-            requestBody.put("model", "deepseek-r1:7b");
+            requestBody.put("model", ollamaModel);
             requestBody.put("prompt","你现在是大厂高级技术面试官。请根据以下对话历史，对候选人的最新回答进行深度评估。\n\n【对话历史】:\n"
                     +conversationMemory.toString()
                     +"\n\n请严格返回如下格式的JSON，不要输出任何Markdown格式标记或思维链。格式：{\"field\":\"考察的技术领域\",\"evaluation\":\"对本次回答的深度点评\",\"nextQuestion\":\"下一个底层原理追问\"}");
@@ -50,7 +62,7 @@ public class AgentService {
             String jsonInputString = mapper.writeValueAsString(requestBody);
             //构建现代的httprquest,锁住http协议
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:11434/api/generate"))
+                    .uri(URI.create(ollamaEndpoint))
                     .header("Content-Type","application/json;utf-8")
                     .timeout(Duration.ofSeconds(60))//给模型思考时间
                     .POST(HttpRequest.BodyPublishers.ofString(jsonInputString,StandardCharsets.UTF_8))
@@ -58,10 +70,14 @@ public class AgentService {
             //发送请求并获取响应
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             int statusCode = response.statusCode();
-            if(statusCode >=200 && statusCode < 300){
+            if(statusCode >= 200 && statusCode < 300){
 
                 JsonNode rootNode = mapper.readTree(response.body());
-                String jsonContent = rootNode.get("response").asText();
+                JsonNode responseNode = rootNode.get("response");
+                if (responseNode == null || responseNode.isNull()) {
+                    throw new RuntimeException("Ollama响应中缺少response字段：" + response.body());
+                }
+                String jsonContent = responseNode.asText();
                 AgentResponse result = mapper.readValue(jsonContent,AgentResponse.class);
 
                 //防御性兜底
@@ -72,14 +88,14 @@ public class AgentService {
                 //更新当前问题，进入下一轮
                 currentQuestion = result.getNextQuestion();
                 return result;
-            }else{
-                throw new RuntimeException("Ollama返回错误代码："+statusCode);
+            } else {
+                throw new RuntimeException("Ollama返回错误代码：" + statusCode + "，请确认模型已安装：" + ollamaModel);
             }
         } catch (Exception e) {
             e.printStackTrace();
             AgentResponse errorResponse = new AgentResponse();
             errorResponse.setField("系统错误");
-            errorResponse.setEvaluation("本地 AI 模型请求失败，请检查 Ollama 后台是否启动。");
+            errorResponse.setEvaluation("无法连接本地 AI。请启动 Ollama，并确认模型 " + ollamaModel + " 已安装。" + e.getMessage());
             errorResponse.setNextQuestion("是否要重新开始？");
             return errorResponse;
         }
